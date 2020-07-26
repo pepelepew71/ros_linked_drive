@@ -16,7 +16,7 @@ class MarkerArrPublisher:
         Subroutine for self.pub_from_locs
         """
         marker = Marker()
-        marker.header.frame_id = "map"
+        marker.header.frame_id = "car1/map"
         marker.header.stamp = rospy.Time.now()
         marker.ns = "/"
         marker.id = 0

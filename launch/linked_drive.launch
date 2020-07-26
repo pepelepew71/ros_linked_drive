@@ -4,17 +4,18 @@
 
     <node pkg="ros_linked_drive" type="linked_drive_pub.py" name="linked_drive" output="screen">
 
-        <param name="map1_frame_id" value="map" />
-        <param name="map2_frame_id" value="map" />
-        <param name="car1_frame_id" value="solamr_1/base_footprint" />
-        <param name="car2_frame_id" value="solamr_2/base_footprint" />
+        <param name="map1_frame_id" value="car1/map" />
+        <param name="map2_frame_id" value="car2/map" />
+        <param name="car1_frame_id" value="car1/base_link" />
+        <param name="car2_frame_id" value="car2/base_link" />
 
-        <param name="car1_odom" value="solamr_1/odom" />
-        <param name="car2_odom" value="solamr_2/odom" />
+        <param name="car1_odom" value="/car1/zed2/zed_node/odom_for_link_drive" />
+        <param name="car2_odom" value="/car2/zed2/zed_node/odom_for_link_drive" />
 
-        <param name="car1_cmd_vel"  value="solamr_1/cmd_vel" />
-        <param name="car2_cmd_vel"  value="solamr_2/cmd_vel" />
-
+        <param name="car1_cmd_vel"  value="car1/cmd_vel" />
+        <param name="car2_cmd_vel"  value="car2/cmd_vel" />
+        
+        <remap from="tf" to="tf_rviz"/>
     </node>
 
 </launch>
