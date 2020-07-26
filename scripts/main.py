@@ -20,6 +20,7 @@ class LinkedDrive:
         dt (float):
         L (float): distance between two solamr when connected with shelft
         dist_error (float):
+        angle_error (float):
         angle_resolution (float):
         rot_vel_max (float):
         lin_vel_max (float):
@@ -29,13 +30,14 @@ class LinkedDrive:
     def __init__(self):
         self.weight_dist = 1.0
         self.dt = 0.3  # sec
-        self.L = 1.0  # m
-        self.dist_error = 0.05
-        self.angle_resolution = 0.01
-        self.rot_vel_max = 3.5718  # rad/s
-        self.lin_vel_max = 5.0  # m/s
-        self.rot_acc = 3.0  # rad/s^2
-        self.lin_acc = 3.0  # m/s^2
+        self.L = 0.93  # m
+        self.dist_error = 0.05  # m
+        self.angle_error = 0.0872  # rad (2.5 deg)
+        self.angle_resolution = 0.01  # rad
+        self.rot_vel_max = 1.0  # rad/s
+        self.lin_vel_max = 1.0  # m/s
+        self.rot_acc = 1.0  # rad/s^2
+        self.lin_acc = 1.0  # m/s^2
 
     def get_predict_pose(self, pose, vel, th0):
         '''
@@ -100,16 +102,15 @@ class LinkedDrive:
             (dict): {pose: cmd_vel, ...}
         '''
         dict_reachable = dict()
-        mat_rot_inv = np.array(
-            [[ np.cos(CUR_TH), np.sin(CUR_TH)],
-             [-np.sin(CUR_TH), np.cos(CUR_TH)]]
-        )
 
         for target in poses:
-            dx = target[0] - CUR_POSE[0]
-            dy = target[1] - CUR_POSE[1]
-            [[dx], [dy]] = np.dot(mat_rot_inv, [[dx], [dy]])  # dx, dy in car coordinate
+            # -- get dx, dy in car coordinate
+            _dx = target[0] - CUR_POSE[0]
+            _dy = target[1] - CUR_POSE[1]
+            dx = _dx *   np.cos(CUR_TH)  + _dy * np.sin(CUR_TH)
+            dy = _dx * (-np.sin(CUR_TH)) + _dy * np.cos(CUR_TH)
 
+            # -- get v, w
             if abs(dy) < 1e-5:  # no rotation
                 w = 0.0
                 v = dx / self.dt
@@ -118,7 +119,8 @@ class LinkedDrive:
                 w = np.arcsin(dx / r) / self.dt
                 v = r * w
 
-            x, y, _ = self.get_predict_pose(CUR_POSE, (v, w), CUR_TH)  # x, y predicted location in map coordinate
+            # -- based on v, w to get x, y in map coordinate
+            x, y, _ = self.get_predict_pose(CUR_POSE, (v, w), CUR_TH)
 
             is_cmd_vel_in_range = self.check_vels_range((v, w))
             is_closed_target_and_xy = get_dist_from_two_poses((x, y), target) < 0.01
@@ -156,94 +158,63 @@ class LinkedDrive:
         Return:
             (float)
         '''
-        x_diff = goal[0] - CUR_POSE[0]
-        y_diff = goal[1] - CUR_POSE[1]
-        theta_goal = np.arctan2(y_diff, x_diff)
-        return theta_goal - CUR_TH
+        dx = goal[0] - CUR_POSE[0]
+        dy = goal[1] - CUR_POSE[1]
+        dth = np.arctan2(dy, dx) - CUR_TH
+        return dth
 
-    def get_angular_vel(self, point, rate_ang=0.5, backward=True):
+    def get_angular_vel(self, point, kp=1.0):
         '''
         Get angluar velocity for facing toward to the front car.
 
         Args:
             point (list):
-            rate_ang (float):
-            backward (bool):
+            kp (float=1.0):
         Return:
             (float):
         '''
-        theta_tol = 0.0175  # in radian ~= 2 deg
-        max_omega = self.rot_vel_max
-        min_omega = 0.1
-        theta_diff = self.get_diff_theta(point)
+        dth = self.get_diff_theta(goal=point)
 
-        # -- TEST: see if this can follow better
-        # theta_diff -= np.pi/8
-        ang_temp = 1e-10
-
-        # -- prevent oscilliation
-        if abs(theta_diff) < theta_tol*2:
-            rate_ang *= 0.3
-        elif abs(theta_diff) < theta_tol*11:
-            rate_ang*=0.5
+        if abs(dth) < self.angle_error:
+            wz = 0.0
         else:
-            pass
+            wz = kp * dth
 
-        # -- turn CW or CCW
-        if theta_diff > 0:
-            if theta_diff > np.pi:
-                ang_temp =  - rate_ang * np.exp(2*np.pi - theta_diff)
-            else :
-                ang_temp =  rate_ang * np.exp(theta_diff)
+        return wz
 
-        if theta_diff < 0:
-            if abs(theta_diff) > np.pi:
-                ang_temp = rate_ang * np.exp(2*np.pi + theta_diff)
-            else :
-                ang_temp = - rate_ang * np.exp(- theta_diff)
-
-        if abs(ang_temp) >= max_omega:
-            ang_temp = max_omega * abs(ang_temp)/ang_temp
-        # elif abs(ang_temp) <= min_omega:
-        #     ang_temp = min_omega * abs(ang_temp)/ang_temp
-        # else:
-        #     pass
-
-        return ang_temp
-
-    def check_face_same_dir(self, goal):
-        '''
-        Decide to drive forward or backward.
-
-        Args:
-            goal (list):
-        Return:
-            (bool):
-        '''
-        if abs(self.get_diff_theta(goal)) < np.pi/2.0 or abs(self.get_diff_theta(goal)) > np.pi*3.0/2.0 :
-            return True  # same dir, drive forward
-        else:
-            return False  # opposite dir, drive reverse
-
-    def get_linear_vel(self, goal, rate_lin=0.5):
+    def get_linear_vel(self, goal, kp=1.0):
         '''
         Args:
             goal (list):
-            rate_lin (float):
+            kp (float=1.0):
         Return:
             (float):
         '''
         dist = get_dist_from_two_poses(CUR_POSE, goal)
+        err = abs(dist - self.L)
 
-        if self.check_face_same_dir(goal) :
-            vel_temp = rate_lin * np.log(dist+1)
+        if err < self.dist_error:
+            vx = 0.0
         else:
-            vel_temp = - rate_lin * np.log(dist+1)
-        # -- MIN and MAX
-        if abs(vel_temp) >= self.lin_vel_max:
-            vel_temp = self.lin_vel_max * abs(vel_temp)/vel_temp
+            # vx = kp * err
+            vx = kp * np.log(dist+1)
+            if abs(vx) > self.lin_vel_max:
+                vx = self.lin_vel_max
 
-        return vel_temp
+            dth = self.get_diff_theta(goal)
+            is_goal_at_faced_dir = not (np.pi/2.0 < dth < np.pi*3.0/2.0)
+            is_follower_at_outside = dist > self.L
+
+            if is_goal_at_faced_dir and is_follower_at_outside:
+                pass
+            elif is_goal_at_faced_dir and not is_follower_at_outside:
+                vx = -vx
+            elif not is_goal_at_faced_dir and is_follower_at_outside:
+                vx = -vx
+            else:
+                pass
+
+        return vx
 
     def get_rated_dist(self, target_pose):
         '''
@@ -263,14 +234,19 @@ class LinkedDrive:
 
         Args:
             target_pose (?):
-            mode (str):
+            mode (str="shelft"):
         Return:
             (float)
         '''
         # -- 1.rate by shelft orientation
-
         # -- 2.rate by front car orientation
         pass
+
+    def get_simple_cmd(self):
+        # -- try to face toward front car and go straight to self.L away from front vehicle
+        wz = self.get_angular_vel(FRONT_POSE)
+        vx = self.get_linear_vel(FRONT_POSE)
+        return vx, wz
 
     def get_opt_rear_vels(self):
         '''
@@ -279,38 +255,28 @@ class LinkedDrive:
         Return:
             (tuple):
         '''
-        potential_poses = self.get_potential_poses()
-        dict_reachable = self.vels_from_poses(potential_poses)
-        reachable_poses = dict_reachable.keys()
-        print(dict_reachable)
+        vx = 0.0
+        wz = 0.0
 
-        if len(reachable_poses) > 0:
-            dict_cost = dict()
-            # -- optimization according to : dist to target, face same direction as front
-            for p, v in dict_reachable.items():
-                # -- 1. dist to target
-                dict_cost[str(v)] = self.get_rated_dist(p)
-
-            vels, cost = sorted(dict_cost.items(), key=lambda item: item[1], reverse=False)[0]  # select min. cost
-            return eval(vels)  # convert str to tuple
-
+        if FRONT_VEL == 0.0:
+            vx, wz = self.get_simple_cmd()
         else:
-            # -- facing toward front car
-            ang_vel = self.get_angular_vel(FRONT_POSE)
-
-            # -- go straight to 1m away from front vehicle if there is no available vels
-            lin_vel = self.get_linear_vel(FRONT_POSE)
-
-            dist = get_dist_from_two_poses(FRONT_POSE, CUR_POSE)
-
-            if abs(dist - self.L) < self.dist_error:
-                lin_vel = 0.0
-            elif dist < self.L:
-                lin_vel = -lin_vel
+            potential_poses = self.get_potential_poses()
+            dict_reachable = self.vels_from_poses(potential_poses)
+            reachable_poses = dict_reachable.keys()
+            print(dict_reachable)
+            if len(reachable_poses) > 0:
+                dict_cost = dict()
+                # -- optimization according to : dist to target, face same direction as front
+                for p, v in dict_reachable.items():
+                    # -- 1. dist to target
+                    dict_cost[str(v)] = self.get_rated_dist(p)
+                vels, cost = sorted(dict_cost.items(), key=lambda item: item[1], reverse=False)[0]  # select min cost
+                vx, wz = eval(vels)  # convert str to tuple
             else:
-                pass
+                vx, wz = self.get_simple_cmd()
 
-            return (lin_vel, ang_vel)
+        return vx, wz
 
     def start(self):
         '''
