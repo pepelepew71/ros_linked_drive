@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+
+<launch>
+
+    <node pkg="ros_linked_drive" type="linked_drive_pub.py" name="linked_drive" output="screen">
+
+        <param name="map1_frame_id" value="map" />
+        <param name="map2_frame_id" value="map" />
+        <param name="car1_frame_id" value="solamr_1/base_footprint" />
+        <param name="car2_frame_id" value="solamr_2/base_footprint" />
+
+        <param name="car1_odom" value="solamr_1/odom" />
+        <param name="car2_odom" value="solamr_2/odom" />
+
+        <param name="car1_cmd_vel"  value="solamr_1/cmd_vel" />
+        <param name="car2_cmd_vel"  value="solamr_2/cmd_vel" />
+
+    </node>
+
+</launch>
