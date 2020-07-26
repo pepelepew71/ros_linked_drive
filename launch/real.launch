@@ -2,7 +2,8 @@
 
 <launch>
 
-    <node pkg="ros_linked_drive" type="linked_drive_pub.py" name="linked_drive" output="screen">
+    <!-- # linked drive -->
+    <node pkg="ros_linked_drive" type="main.py" name="linked_drive" output="screen">
 
         <param name="map1_frame_id" value="car1/map" />
         <param name="map2_frame_id" value="car2/map" />
@@ -14,8 +15,9 @@
 
         <param name="car1_cmd_vel"  value="car1/cmd_vel" />
         <param name="car2_cmd_vel"  value="car2/cmd_vel" />
-        
+
         <remap from="tf" to="tf_rviz"/>
+
     </node>
 
 </launch>

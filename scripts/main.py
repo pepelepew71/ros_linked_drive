@@ -10,7 +10,7 @@ from nav_msgs.msg import Odometry
 import tf
 import tf2_ros
 
-from linked_drive_marker import MarkerArrPublisher
+from _marker import MarkerArrPublisher
 
 
 class LinkedDrive:
@@ -482,7 +482,7 @@ if __name__ == '__main__':
     rospy.Subscriber(name=car1_odom, data_class=Odometry, callback=_cb_car1_odom)  # for FRONT_VEL
     rospy.Subscriber(name=car2_odom, data_class=Odometry, callback=_cb_car2_odom)  # for CUR_VEL
     PUB_R_VEL = rospy.Publisher(name=car2_cmd_vel, data_class=Twist, queue_size=10)
-    PUB_MARKER_ARRAY = MarkerArrPublisher()
+    PUB_MARKER_ARRAY = MarkerArrPublisher(frame_id=map1_frame_id)
 
     ## -- tf listener for POSE, ORI and TH
     frames = {

@@ -8,15 +8,16 @@ class MarkerArrPublisher:
     """
     Publish all linked drive predicted pose locations
     """
-    def __init__(self):
+    def __init__(self, frame_id):
         self.pub = rospy.Publisher(name="visualization_marker_array", data_class=MarkerArray, queue_size=1)
+        self.frame_id = frame_id
 
     def _get_marker(self):
         """
         Subroutine for self.pub_from_locs
         """
         marker = Marker()
-        marker.header.frame_id = "car1/map"
+        marker.header.frame_id = self.frame_id
         marker.header.stamp = rospy.Time.now()
         marker.ns = "/"
         marker.id = 0
