@@ -32,12 +32,12 @@ class LinkedDrive:
         self.dt = 0.3  # sec
         self.L = 0.93  # m
         self.dist_error = 0.05  # m
-        self.angle_error = 0.0872  # rad (2.5 deg)
+        self.angle_error = 0.0436  # rad (2.5 deg)
         self.angle_resolution = 0.01  # rad
         self.rot_vel_max = 1.0  # rad/s
-        self.lin_vel_max = 1.0  # m/s
+        self.lin_vel_max = 3.0  # m/s
         self.rot_acc = 1.0  # rad/s^2
-        self.lin_acc = 1.0  # m/s^2
+        self.lin_acc = 3.0  # m/s^2
 
     def get_predict_pose(self, pose, vel, th0):
         '''
@@ -104,19 +104,22 @@ class LinkedDrive:
         dict_reachable = dict()
 
         for target in poses:
+
+            # -- get dx, dy in map coordinate
+            dx_map = target[0] - CUR_POSE[0]
+            dy_map = target[1] - CUR_POSE[1]
+
             # -- get dx, dy in car coordinate
-            _dx = target[0] - CUR_POSE[0]
-            _dy = target[1] - CUR_POSE[1]
-            dx = _dx *   np.cos(CUR_TH)  + _dy * np.sin(CUR_TH)
-            dy = _dx * (-np.sin(CUR_TH)) + _dy * np.cos(CUR_TH)
+            dx_car = dx_map *   np.cos(CUR_TH)  + dy_map * np.sin(CUR_TH)
+            dy_car = dx_map * (-np.sin(CUR_TH)) + dy_map * np.cos(CUR_TH)
 
             # -- get v, w
-            if abs(dy) < 1e-5:  # no rotation
+            if abs(dy_car) < 1e-5:  # no rotation
                 w = 0.0
-                v = dx / self.dt
+                v = dx_car / self.dt
             else:
-                r = (dx**2 + dy**2) / (2.0*dy)
-                w = np.arcsin(dx / r) / self.dt
+                r = (dx_car**2 + dy_car**2) / (2.0*dy_car)
+                w = np.arcsin(dx_car / r) / self.dt
                 v = r * w
 
             # -- based on v, w to get x, y in map coordinate
@@ -151,8 +154,10 @@ class LinkedDrive:
         else:
             return True
 
-    def get_diff_theta(self, goal):
+    def get_rotate_theta(self, goal):
         '''
+        Get rotation theta between two vector, be careful the rotation direction
+
         Args:
             goal (list):
         Return:
@@ -161,6 +166,20 @@ class LinkedDrive:
         dx = goal[0] - CUR_POSE[0]
         dy = goal[1] - CUR_POSE[1]
         dth = np.arctan2(dy, dx) - CUR_TH
+
+        if dth > 0:
+            if dth > np.pi:  # CCW
+                dth -= 2.0*np.pi
+            else:  # CW
+                pass
+        elif dth < 0:
+            if dth < -np.pi:  # CW
+                dth += 2.0*np.pi
+            else:  # CCW
+                pass
+        else:
+            pass
+
         return dth
 
     def get_angular_vel(self, point, kp=1.0):
@@ -173,7 +192,7 @@ class LinkedDrive:
         Return:
             (float):
         '''
-        dth = self.get_diff_theta(goal=point)
+        dth = self.get_rotate_theta(goal=point)
 
         if abs(dth) < self.angle_error:
             wz = 0.0
@@ -196,13 +215,13 @@ class LinkedDrive:
         if err < self.dist_error:
             vx = 0.0
         else:
-            # vx = kp * err
-            vx = kp * np.log(dist+1)
+            vx = kp * err
+
             if abs(vx) > self.lin_vel_max:
                 vx = self.lin_vel_max
 
-            dth = self.get_diff_theta(goal)
-            is_goal_at_faced_dir = not (np.pi/2.0 < dth < np.pi*3.0/2.0)
+            dth = self.get_rotate_theta(goal)
+            is_goal_at_faced_dir = -np.pi/2.0 < dth < np.pi/2.0
             is_follower_at_outside = dist > self.L
 
             if is_goal_at_faced_dir and is_follower_at_outside:
@@ -228,20 +247,6 @@ class LinkedDrive:
         follower_pose = CUR_POSE
         return self.weight_dist * get_dist_from_two_poses(follower_pose, target_pose)
 
-    def get_rated_ori(self, target_pose, mode="shelft"):
-        '''
-        get the rate of orientation, standatd: 1.shelft orientation, 2.front car orientation.
-
-        Args:
-            target_pose (?):
-            mode (str="shelft"):
-        Return:
-            (float)
-        '''
-        # -- 1.rate by shelft orientation
-        # -- 2.rate by front car orientation
-        pass
-
     def get_simple_cmd(self):
         # -- try to face toward front car and go straight to self.L away from front vehicle
         wz = self.get_angular_vel(FRONT_POSE)
@@ -258,13 +263,14 @@ class LinkedDrive:
         vx = 0.0
         wz = 0.0
 
-        if FRONT_VEL == 0.0:
+        if FRONT_VEL[0] == 0.0:
             vx, wz = self.get_simple_cmd()
         else:
             potential_poses = self.get_potential_poses()
             dict_reachable = self.vels_from_poses(potential_poses)
             reachable_poses = dict_reachable.keys()
-            print(dict_reachable)
+            print(reachable_poses)
+
             if len(reachable_poses) > 0:
                 dict_cost = dict()
                 # -- optimization according to : dist to target, face same direction as front
@@ -286,21 +292,11 @@ class LinkedDrive:
         rate = rospy.Rate(hz=10)
         try:
             while not rospy.is_shutdown():
-                ros_t0 = rospy.get_time()
-
-                # -- update follower pose
                 rear_vels = self.get_opt_rear_vels()
-
                 _twist = Twist()
                 _twist.linear.x = rear_vels[0]
                 _twist.angular.z = rear_vels[1]
-
                 PUB_R_VEL.publish(_twist)
-
-                ros_td = rospy.get_time() - ros_t0
-                if ros_td > 0 :
-                    print("pub Hz = {0}".format(1.0/ros_td))
-
                 rate.sleep()
 
         except rospy.ROSInterruptException:
